@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>BT Chat Safe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 flex flex-col h-screen overflow-hidden">
+    
+    <!-- En-tête -->
+    <div class="bg-blue-900 text-white p-4 shadow-lg flex justify-between items-center z-10">
+        <h1 class="font-bold text-sm">Bluetooth Chat <span class="text-blue-400">V5.1</span></h1>
+        <div id="status" class="text-[10px] bg-blue-800 px-2 py-1 rounded">Déconnecté</div>
+    </div>
+
+    <!-- Zone de Permissions (Visible si besoin) -->
+    <div id="permZone" class="p-4 bg-red-50 border-b border-red-100">
+        <p class="text-xs text-red-600 font-bold mb-2">⚠️ Android 16 requiert votre accord :</p>
+        <button onclick="askPerms()" class="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition">
+            AUTORISER APPAREILS À PROXIMITÉ
+        </button>
+    </div>
+    
+    <!-- Liste des messages -->
+    <div id="msgList" class="flex-1 p-4 overflow-y-auto space-y-2 pb-24 bg-slate-50">
+        <div class="text-center text-xs text-slate-400 mt-4">Bienvenue. Cliquez sur le bouton rouge si rien ne marche.</div>
+    </div>
+
+    <!-- Barre de contrôle -->
+    <div class="bg-white p-3 border-t flex gap-2 fixed bottom-0 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <button onclick="scan()" class="bg-slate-200 text-slate-700 p-3 rounded-xl font-bold text-xs uppercase">Scan</button>
+        <input id="input" type="text" class="flex-1 bg-slate-100 rounded-xl px-4 outline-none text-sm" placeholder="Message...">
+        <button onclick="send()" class="bg-blue-600 text-white p-3 rounded-xl font-bold shadow-md">➤</button>
+    </div>
+
+    <script>
+        function log(m, type='sys') {
+            const div = document.createElement('div');
+            div.className = type === 'me' ? 'bg-blue-600 text-white p-3 rounded-tr-none rounded-2xl self-end max-w-[85%] ml-auto text-sm shadow' : 
+                            type === 'sys' ? 'text-center text-[10px] text-slate-400 my-2 uppercase font-bold tracking-wide' :
+                            'bg-white text-slate-800 p-3 rounded-tl-none rounded-2xl self-start max-w-[85%] shadow-sm text-sm border border-slate-100';
+            div.innerText = m;
+            const list = document.getElementById('msgList');
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        // Démarrage
+        document.addEventListener('deviceready', () => {
+            log("Système Prêt.", 'sys');
+            // Tentative automatique
+            askPerms(true);
+            
+            bluetoothSerial.subscribe('\n', data => log(data, 'other'), err => log("Erreur Rx: " + err, 'sys'));
+        }, false);
+
+        function askPerms(silent = false) {
+            if(!window.cordova) return log("Mode Navigateur (Pas de Bluetooth)", 'sys');
+            
+            const p = cordova.plugins.permissions;
+            const list = [
+                p.BLUETOOTH_SCAN,
+                p.BLUETOOTH_CONNECT,
+                p.BLUETOOTH_ADVERTISE,
+                p.ACCESS_FINE_LOCATION
+            ];
+
+            p.requestPermissions(list, function(status) {
+                if(status.hasPermission) {
+                    if(!silent) alert("Permissions Accordées !");
+                    log("Bluetooth Débloqué", 'sys');
+                    document.getElementById('permZone').style.display = 'none'; // Cache le bouton rouge
+                } else {
+                    if(!silent) alert("Permissions Refusées ! L'app ne marchera pas.");
+                }
+            }, function(err) { log("Erreur Perms: " + JSON.stringify(err), 'sys'); });
+        }
+
+        function scan() {
+            log("Recherche...", 'sys');
+            bluetoothSerial.list(function(devices) {
+                if(devices.length === 0) return log("Aucun appareil associé trouvé dans les réglages Android.", 'sys');
+                devices.forEach(function(d) {
+                    log("Trouvé: " + d.name, 'sys');
+                    if(confirm("Se connecter à " + d.name + " (" + d.id + ") ?")) connect(d.id);
+                });
+            }, function(err) { log("Erreur Scan: " + err, 'sys'); alert("Avez-vous accepté les permissions ?"); });
+        }
+
+        function connect(id) {
+            document.getElementById('status').innerText = "Connexion...";
+            bluetoothSerial.connect(id, function() {
+                document.getElementById('status').innerText = "Connecté";
+                document.getElementById('status').className = "text-[10px] bg-green-600 px-2 py-1 rounded";
+                log("Connecté !", 'sys');
+            }, function(err) {
+                document.getElementById('status').innerText = "Erreur";
+                document.getElementById('status').className = "text-[10px] bg-red-600 px-2 py-1 rounded";
+                log("Échec: " + err, 'sys');
+            });
+        }
+
+        function send() {
+            const txt = document.getElementById('input').value;
+            if(!txt) return;
+            bluetoothSerial.write(txt + "\n", function() {
+                log(txt, 'me');
+                document.getElementById('input').value = '';
+            }, function(err) { log("Erreur Envoi", 'sys'); });
+        }
+    </script>
+</body>
+</html>
